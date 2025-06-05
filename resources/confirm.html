@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirmar Registro - Cloud Computing Infrastructure</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js/dist/amazon-cognito-identity.min.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/auth.js"></script>
+</head>
+
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-md">
+        <div class="container mx-auto px-4 py-6">
+            <nav class="flex items-center justify-between">
+                <a href="index.html" class="text-blue-600 hover:text-blue-800">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                    </svg>
+                </a>
+                <h1 class="text-3xl font-bold text-blue-600">Cloud Computing Infrastructure</h1>
+                <div class="w-6"></div>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Confirm Form -->
+    <div class="container mx-auto px-4 py-16">
+        <div class="max-w-md mx-auto bg-white rounded-lg shadow-lg overflow-hidden">
+            <div class="p-8">
+                <h2 class="text-2xl font-bold text-gray-800 text-center mb-8">Confirmar Registro</h2>
+                <p id="emailDisplay" class="text-center text-gray-600 mb-6"></p>
+                <form id="confirmForm" class="space-y-6">
+                    <div>
+                        <label for="code" class="block text-sm font-medium text-gray-700 mb-2">
+                            Código de Verificación
+                        </label>
+                        <input type="text" id="code" name="code" required
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="Ingresa el código">
+                    </div>
+                    <div>
+                        <button type="submit"
+                            class="w-full bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg hover:bg-blue-700 transition duration-200">
+                            Confirmar
+                        </button>
+                    </div>
+                </form>
+                <div class="mt-6 text-center">
+                    <p class="text-sm text-gray-600">
+                        ¿No recibiste el código?
+                        <button id="resendCode" class="text-blue-600 hover:text-blue-800 font-medium">
+                            Reenviar código
+                        </button>
+                    </p>
+                </div>
+                <div id="errorMessage" class="mt-4 p-4 bg-red-100 text-red-700 rounded-lg hidden"></div>
+                <div id="successMessage" class="mt-4 p-4 bg-green-100 text-green-700 rounded-lg hidden"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Inicializar Cognito con los valores de configuración
+        initCognito(cognitoConfig.userPoolId, cognitoConfig.clientId);
+
+        // Obtener parámetros de la URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const email = urlParams.get('email');
+        const codeFromUrl = urlParams.get('code');
+
+        if (!email && !codeFromUrl) {
+            window.location.href = 'signup.html';
+        }
+
+        // Si tenemos el código en la URL, intentar confirmar automáticamente
+        if (codeFromUrl) {
+            const cognitoUser = new AmazonCognitoIdentity.CognitoUser({
+                Username: email || 'temp@example.com', // Necesitamos un email para crear el objeto
+                Pool: userPool
+            });
+
+            cognitoUser.confirmRegistration(codeFromUrl, true, (err, result) => {
+                console.log('Respuesta de confirmación automática:', { err, result });
+                const errorMessage = document.getElementById('errorMessage');
+                const successMessage = document.getElementById('successMessage');
+
+                if (err) {
+                    console.error('Error al confirmar:', err);
+                    if (err.code === 'CodeMismatchException') {
+                        errorMessage.textContent = 'El código de verificación es incorrecto. Por favor, intenta nuevamente.';
+                    } else if (err.code === 'ExpiredCodeException') {
+                        errorMessage.textContent = 'El código ha expirado. Por favor, solicita un nuevo código.';
+                    } else if (err.code === 'UserNotFoundException') {
+                        errorMessage.textContent = 'No se encontró el usuario. Por favor, regístrate nuevamente.';
+                    } else if (err.code === 'NotAuthorizedException') {
+                        errorMessage.textContent = 'El usuario ya está confirmado. Puedes iniciar sesión.';
+                        setTimeout(() => {
+                            window.location.href = 'login.html';
+                        }, 2000);
+                    } else {
+                        errorMessage.textContent = 'Error al confirmar: ' + (err.message || JSON.stringify(err));
+                    }
+                    errorMessage.classList.remove('hidden');
+                    successMessage.classList.add('hidden');
+                    return;
+                }
+
+                successMessage.textContent = '¡Cuenta confirmada exitosamente! Redirigiendo al login...';
+                successMessage.classList.remove('hidden');
+                errorMessage.classList.add('hidden');
+
+                setTimeout(() => {
+                    window.location.href = 'login.html';
+                }, 2000);
+            });
+        }
+
+        // Mostrar el email si está disponible
+        if (email) {
+            document.getElementById('emailDisplay').textContent = `Código enviado a: ${email}`;
+        } else {
+            document.getElementById('emailDisplay').textContent = 'Por favor, ingresa el código de verificación';
+        }
+
+        // Verificar el estado del usuario al cargar la página
+        const cognitoUser = new AmazonCognitoIdentity.CognitoUser({
+            Username: email,
+            Pool: userPool
+        });
+
+        cognitoUser.getUserAttributes((err, attributes) => {
+            if (err) {
+                console.error('Error al obtener atributos:', err);
+                return;
+            }
+
+            const emailVerified = attributes.find(attr => attr.getName() === 'email_verified')?.getValue() === 'true';
+            if (emailVerified) {
+                const successMessage = document.getElementById('successMessage');
+                successMessage.textContent = 'Tu correo ya está verificado. Redirigiendo al login...';
+                successMessage.classList.remove('hidden');
+                setTimeout(() => {
+                    window.location.href = 'login.html';
+                }, 2000);
+            }
+        });
+
+        // Función para confirmar el registro
+        document.getElementById('confirmForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const code = document.getElementById('code').value;
+            const errorMessage = document.getElementById('errorMessage');
+            const successMessage = document.getElementById('successMessage');
+
+            console.log('Intentando confirmar con email:', email);
+            console.log('Código ingresado:', code);
+
+            const cognitoUser = new AmazonCognitoIdentity.CognitoUser({
+                Username: email,
+                Pool: userPool
+            });
+
+            cognitoUser.confirmRegistration(code, true, (err, result) => {
+                console.log('Respuesta de confirmación:', { err, result });
+
+                if (err) {
+                    console.error('Error al confirmar:', err);
+                    if (err.code === 'CodeMismatchException') {
+                        errorMessage.textContent = 'El código de verificación es incorrecto. Por favor, intenta nuevamente.';
+                    } else if (err.code === 'ExpiredCodeException') {
+                        errorMessage.textContent = 'El código ha expirado. Por favor, solicita un nuevo código.';
+                    } else if (err.code === 'UserNotFoundException') {
+                        errorMessage.textContent = 'No se encontró el usuario. Por favor, regístrate nuevamente.';
+                    } else if (err.code === 'NotAuthorizedException') {
+                        errorMessage.textContent = 'El usuario ya está confirmado. Puedes iniciar sesión.';
+                        setTimeout(() => {
+                            window.location.href = 'login.html';
+                        }, 2000);
+                    } else {
+                        errorMessage.textContent = 'Error al confirmar: ' + (err.message || JSON.stringify(err));
+                    }
+                    errorMessage.classList.remove('hidden');
+                    successMessage.classList.add('hidden');
+                    return;
+                }
+
+                successMessage.textContent = '¡Cuenta confirmada exitosamente! Redirigiendo al login...';
+                successMessage.classList.remove('hidden');
+                errorMessage.classList.add('hidden');
+
+                setTimeout(() => {
+                    window.location.href = 'login.html';
+                }, 2000);
+            });
+        });
+
+        // Función para reenviar el código
+        document.getElementById('resendCode').addEventListener('click', () => {
+            const resendButton = document.getElementById('resendCode');
+            const errorMessage = document.getElementById('errorMessage');
+            const successMessage = document.getElementById('successMessage');
+
+            console.log('Intentando reenviar código a:', email);
+
+            // Deshabilitar el botón mientras se procesa
+            resendButton.disabled = true;
+            resendButton.textContent = 'Enviando...';
+            resendButton.classList.add('opacity-50', 'cursor-not-allowed');
+
+            const cognitoUser = new AmazonCognitoIdentity.CognitoUser({
+                Username: email,
+                Pool: userPool
+            });
+
+            cognitoUser.resendConfirmationCode((err, result) => {
+                // Restaurar el botón
+                resendButton.disabled = false;
+                resendButton.textContent = 'Reenviar código';
+                resendButton.classList.remove('opacity-50', 'cursor-not-allowed');
+
+                if (err) {
+                    console.error('Error al reenviar código:', err);
+                    errorMessage.textContent = 'Error al reenviar el código: ' + (err.message || JSON.stringify(err));
+                    errorMessage.classList.remove('hidden');
+                    successMessage.classList.add('hidden');
+                    return;
+                }
+
+                successMessage.textContent = 'Código reenviado exitosamente. Por favor, revisa tu correo.';
+                successMessage.classList.remove('hidden');
+                errorMessage.classList.add('hidden');
+            });
+        });
+    </script>
+
+</body>
+
+</html> 
